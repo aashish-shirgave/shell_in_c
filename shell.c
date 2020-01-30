@@ -105,8 +105,9 @@ void print_prompt(){
 /**/
 int check_cd(char * command){
     if(command[0] == 'c' && command[1] == 'd' && command[2] == ' '){
-        
-        if(chdir(command + 3) < 0 ){
+        char *dir;
+        dir = string_copy(command + 3, command+ strlen(command) - 1);
+        if(chdir(dir) < 0 ){
             fprintf(stderr, "*%s* Directory not found\n", command + 3);
         }
         if(getcwd(cwd, sizeof(cwd)) != NULL){
