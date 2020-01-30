@@ -1,0 +1,13 @@
+0. The infinite while loop for the program.
+    a. A genric loop with fork and exec 
+1. The tokanization
+    a. The tokens with pipes
+    b. tokens with input or output Redirection
+    c. The terminal based command like cd etc.
+2. The pipes
+    a. pipes for more than 2 appplications
+    b. child and parent creation with pipes
+    c. The file descripter change with pipe 
+3. Input Redirection
+    a. The file descripter change with input/output redirection
+
