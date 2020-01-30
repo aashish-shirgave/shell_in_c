@@ -9,6 +9,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <assert.h>
+#include<setjmp.h>
 #include <signal.h>
 
 #define MAXARGS 128
@@ -18,6 +19,8 @@ char prompt[2048];
 char cwd[1024];
 char symbols[] = "<>|";
 char space[] = " \t\r\n\v";
+static sigjmp_buf buf;
+pid_t pid = -1;
 
 /*************************************/
 /****** Structures *******************/
@@ -274,7 +277,7 @@ cmd *parse_for_redirects(cmd *ret, char **start, char *end){
     char *q, *eq;
 
     while(peek(start, end, "<>")){
-        printf("in loop \n");
+        //printf("in loop \n");
         tokens = get_token(start, end, 0, 0);
         if(get_token(start, end, &q, &eq) != 'a'){
             fprintf(stderr, "missing file fpr redirection \n");
@@ -286,7 +289,7 @@ cmd *parse_for_redirects(cmd *ret, char **start, char *end){
                 break;
             
             case '>' :
-                printf("Got > *%s*\n",string_copy(q, eq));
+                //printf("Got > *%s*\n",string_copy(q, eq));
                 ret = redirect_command(ret, string_copy(q, eq), '>');
                 break;
         }
@@ -349,10 +352,10 @@ void run_command(cmd *command){
 
         case '>' :
         case '<' :
-            printf("Running redirection now\n");
+            //printf("Running redirection now\n");
             redir_command = (redircmd *) command;
             close(redir_command->fd);
-            if(open(redir_command -> filename, redir_command->mode) < 0){
+            if(open(redir_command -> filename, redir_command->mode, 0666) < 0){
                 fprintf(stderr, "File cannot be opened - %s\n", redir_command->filename);
             }
             run_command(redir_command->cmd);
@@ -402,12 +405,26 @@ int get_command(char * command, int length){
 }
 void signal_function(int signal_number){
     signal(SIGINT, signal_function);
+    if(pid > 0){
+        kill(pid, SIGKILL);
+    }    
+    pid = -1;
+    siglongjmp(buf, 1);
 }
 
+void check_exit(char *command){
+    char *temp;
+    temp = string_copy(command, command + 4);
+    char test[] = "exit";
+    if(strcmp(temp, test) == 0){
+        printf("thank you !!\n");
+        exit(0);
+    }
+}
 int main(){
     print_prompt();
     char command[256];
-    int r, pid;
+    int r;
     signal(SIGINT, signal_function);
     do{
         //printf("aashish\n");
@@ -415,9 +432,19 @@ int main(){
         //command[strlen(command)] = '\n';
         //printf("The command is *%s* \n", command);
         //checking for command cd
+        if (sigsetjmp(buf, 1)) 
+        {
+            printf("\n");
+        }
+        else
+        { 
+            
+        } 
         if(get_command(command, sizeof(command)) < 0){
+            printf("\n");
             break;
         }
+        check_exit(command); 
         if(check_cd(command)){
             continue;
         }
