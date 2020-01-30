@@ -9,6 +9,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <assert.h>
+#include <signal.h>
 
 #define MAXARGS 128
 /****** Global Variables *************/
@@ -399,12 +400,15 @@ int get_command(char * command, int length){
     }
     return 0;
 }
+void signal_function(int signal_number){
+    signal(SIGINT, signal_function);
+}
 
 int main(){
     print_prompt();
     char command[256];
     int r, pid;
-
+    signal(SIGINT, signal_function);
     do{
         //printf("aashish\n");
         //command = readline(prompt);
