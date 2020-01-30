@@ -8,14 +8,15 @@
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <assert.h>
 
-
-#define MAXARGS 16
+#define MAXARGS 128
 /****** Global Variables *************/
-char space[] = " \t\r\n\v";
-static char *prompt;
+//char space[] = "  \t\r\n\v";
+char prompt[2048];
 char cwd[1024];
 char symbols[] = "<>|";
+char space[] = " \t\r\n\v";
 
 /*************************************/
 /****** Structures *******************/
@@ -86,6 +87,8 @@ void run_command(cmd *command);
 
 /*************************************/
 void print_prompt(){
+    //printf("Aashish \n");
+    //strcpy(prompt,"My prompt :");
     if(getcwd(cwd, sizeof(cwd)) != NULL){
         strcpy(prompt,"My prompt :");
         strcat(prompt, cwd);
@@ -161,17 +164,20 @@ cmd *parse_to_execute(char **start, char *end){
     argc = 0;
 
     ret = parse_for_redirects(ret, start, end);
+    //printf("In the parse to execute - *%s* *%c*\n", string_copy(*start, end), ret->type);
     while(!peek(start, end, "|")){
         if((token = get_token(start, end, &q, &eq)) == 0){
             break;
         }
-        if(token == 'a'){
+        if(token != 'a'){
             fprintf(stderr, "syntax error in the command\n");
             exit(-1);
         }
-        command ->argv[argc] == string_copy(q, eq);
+        command ->argv[argc] = string_copy(q, eq);
+        //printf("%d *%s*\n", argc, command ->argv[argc]);
+
         argc ++;
-        if(argc > MAXARGS){
+        if(argc >= MAXARGS){
             fprintf(stderr, "Too many arguments to the command\n");
             exit(-1);
         }
@@ -179,7 +185,7 @@ cmd *parse_to_execute(char **start, char *end){
 
     }
     command->argv[argc] = 0;
-
+    return ret;
 }
 
 /**/
@@ -201,6 +207,7 @@ int peek(char **start, char *end_ptr, char *tokens){
         temp++;
     }
     *start = temp;
+    //printf("peek ->%d  %d\n",end_ptr - *start, *temp && strchr(tokens, *temp));
     return *temp && strchr(tokens, *temp);
 }
 
@@ -213,6 +220,7 @@ int get_token(char **start, char *end, char **q, char **eq){
     while(temp < end && strchr(space, *temp)){
         temp++;
     }
+    //printf("in get token *%d* *%d* \n", temp - *start, end - temp);
     if(q != NULL){
         *q = temp;
     }
@@ -240,6 +248,7 @@ int get_token(char **start, char *end, char **q, char **eq){
     while(temp < end && strchr(space, *temp)){
         temp ++;
     }
+    *start = temp;
     return ret;
 }
 
@@ -262,10 +271,11 @@ cmd *parse_for_redirects(cmd *ret, char **start, char *end){
     int tokens;
     char *q, *eq;
 
-    while(peek(start, end, "><")){
+    while(peek(start, end, "<>")){
+        printf("in loop \n");
         tokens = get_token(start, end, 0, 0);
-        if(get_token(start, end, &q, &eq) == 'a'){
-            fprintf(stderr, "missing file fpr redirection ");
+        if(get_token(start, end, &q, &eq) != 'a'){
+            fprintf(stderr, "missing file fpr redirection \n");
             exit(-1);
         }
         switch (tokens){
@@ -274,6 +284,7 @@ cmd *parse_for_redirects(cmd *ret, char **start, char *end){
                 break;
             
             case '>' :
+                printf("Got > *%s*\n",string_copy(q, eq));
                 ret = redirect_command(ret, string_copy(q, eq), '>');
                 break;
         }
@@ -286,13 +297,11 @@ char *string_copy(char *start,  char *end){
     int num;
     num = end - start;
     char *ret;
-    ret = (char *)malloc(num);
-    if(ret == NULL){
-        fprintf(stderr, "Could not malloc");
-        exit(-1);
-    }
+    ret = (char *)malloc(num + 1);
+    assert(ret);
     strncpy(ret, start, num);
-    ret[num] = '\0';
+    ret[num] = 0;
+    //printf("%d *%s*  ", num, ret);
     return ret;
 }
 
@@ -310,6 +319,7 @@ cmd *redirect_command(cmd *subcmd, char *filename, int type){
     return (cmd *) command;
 }
 
+/**/
 void run_command(cmd *command){
     int pfd[2], i;
     execmd *exec_command;
@@ -324,7 +334,7 @@ void run_command(cmd *command){
         case ' ' :
             exec_command = (execmd*)command;
             char path1[100] = "/bin/";
-            char path2[100] = "/bin/usr/";
+            char path2[100] = "/usr/bin/";
             
             if(exec_command->argv[0] == 0){
                 exit(0);
@@ -337,7 +347,7 @@ void run_command(cmd *command){
 
         case '>' :
         case '<' :
-            
+            printf("Running redirection now\n");
             redir_command = (redircmd *) command;
             close(redir_command->fd);
             if(open(redir_command -> filename, redir_command->mode) < 0){
@@ -377,16 +387,32 @@ void run_command(cmd *command){
 
 }
 
+int get_command(char * command, int length){
+    if(isatty(fileno(stdin))){
+        fprintf(stdout, "%s", prompt);
+    }
+    memset(command, 0, length);
+    fgets(command, length, stdin);
+    if(command[0] == 0){
+        return -1;
+    }
+    return 0;
+}
+
 int main(){
     print_prompt();
-    char *command;
+    char command[256];
     int r, pid;
 
     do{
-        printf("aashish");
-        command = readline(prompt);
-        printf("The command is %s \n", command);
+        //printf("aashish\n");
+        //command = readline(prompt);
+        //command[strlen(command)] = '\n';
+        //printf("The command is *%s* \n", command);
         //checking for command cd
+        if(get_command(command, sizeof(command)) < 0){
+            break;
+        }
         if(check_cd(command)){
             continue;
         }
@@ -402,7 +428,7 @@ int main(){
         
         //run_command(command);
 
-        free(command);
+        //free(command);
     }while(1);
     
 }
