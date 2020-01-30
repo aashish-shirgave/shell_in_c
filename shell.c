@@ -5,6 +5,10 @@
 #include <unistd.h>
 #include <readline/readline.h>
 #include <readline/history.h>
+#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+
 
 #define MAXARGS 16
 /****** Global Variables *************/
@@ -64,10 +68,17 @@ int peek(char **start, char *end_ptr, char *tokens);
 int get_token(char **start,  char *end, char **q,  char **eq);
 
 cmd *pipe_command(cmd *left, cmd *right);
+
+cmd *redirect_command(cmd *subcmd, char *filename, int type);
+
 cmd *execute_command();
 
+cmd *parse_for_redirects(cmd *ret, char **start, char *end);
 
-//void run_command();
+char *string_copy(char *start, char *end);
+
+
+void run_command(cmd *command);
 //cmd execute_command();
 
 
@@ -118,7 +129,7 @@ cmd *parse_command(char * command){
     peek(&command, end_ptr, "");
 
     if(command != end_ptr){
-        fprint(stderr, "The unexecuted commands %s\n", command);
+        fprintf(stderr, "The unexecuted commands %s\n", command);
         exit(-1);
     }
     return cmdd;
@@ -137,6 +148,7 @@ cmd *parse_with_pipe(char **start, char *end){
     return command;
 }
 
+/**/
 cmd *parse_to_execute(char **start, char *end){
     char *q, *eq;
     int token, argc;
@@ -145,9 +157,39 @@ cmd *parse_to_execute(char **start, char *end){
 
     ret = execute_command();
 
+    command = (execmd*) ret;
+    argc = 0;
+
+    ret = parse_for_redirects(ret, start, end);
+    while(!peek(start, end, "|")){
+        if((token = get_token(start, end, &q, &eq)) == 0){
+            break;
+        }
+        if(token == 'a'){
+            fprintf(stderr, "syntax error in the command\n");
+            exit(-1);
+        }
+        command ->argv[argc] == string_copy(q, eq);
+        argc ++;
+        if(argc > MAXARGS){
+            fprintf(stderr, "Too many arguments to the command\n");
+            exit(-1);
+        }
+        ret = parse_for_redirects(ret, start, end);
+
+    }
+    command->argv[argc] = 0;
+
 }
 
-cmd *exec
+/**/
+cmd *execute_command(){
+    execmd *command;
+    command = malloc(sizeof(*command));
+    memset(command, 0, sizeof(command));
+    command->type = ' ';
+    return (cmd*) command;
+}
 
 
 /**/
@@ -215,18 +257,149 @@ cmd *pipe_command(cmd *left, cmd *right){
     return (cmd*)command;
 }
 
+/**/
+cmd *parse_for_redirects(cmd *ret, char **start, char *end){
+    int tokens;
+    char *q, *eq;
 
+    while(peek(start, end, "><")){
+        tokens = get_token(start, end, 0, 0);
+        if(get_token(start, end, &q, &eq) == 'a'){
+            fprintf(stderr, "missing file fpr redirection ");
+            exit(-1);
+        }
+        switch (tokens){
+            case '<' :
+                ret = redirect_command(ret, string_copy(q, eq), '<');
+                break;
+            
+            case '>' :
+                ret = redirect_command(ret, string_copy(q, eq), '>');
+                break;
+        }
+    }
+    return ret;
+}
+
+/**/
+char *string_copy(char *start,  char *end){
+    int num;
+    num = end - start;
+    char *ret;
+    ret = (char *)malloc(num);
+    if(ret == NULL){
+        fprintf(stderr, "Could not malloc");
+        exit(-1);
+    }
+    strncpy(ret, start, num);
+    ret[num] = '\0';
+    return ret;
+}
+
+/***/
+cmd *redirect_command(cmd *subcmd, char *filename, int type){
+    redircmd *command;
+    command = malloc(sizeof(*command));
+    memset(command, 0, sizeof(*command));
+
+    command->type = type;
+    command->cmd = subcmd;
+    command->filename = filename;
+    command->mode = (type == '<') ? O_RDONLY : O_WRONLY|O_CREAT|O_TRUNC;
+    command->fd = (type == '<') ? 0 : 1;
+    return (cmd *) command;
+}
+
+void run_command(cmd *command){
+    int pfd[2], i;
+    execmd *exec_command;
+    pipecmd *pipe_command;
+    redircmd *redir_command;
+
+    switch(command->type){
+        default :
+            fprintf(stderr, "command not found");
+            exit(-1);
+
+        case ' ' :
+            exec_command = (execmd*)command;
+            char path1[100] = "/bin/";
+            char path2[100] = "/bin/usr/";
+            
+            if(exec_command->argv[0] == 0){
+                exit(0);
+            }
+            execv(exec_command->argv[0], exec_command->argv);
+            execv(strcat(path1,exec_command->argv[0]),exec_command->argv);
+            execv(strcat(path2,exec_command->argv[0]),exec_command->argv);
+            fprintf(stderr, "Execution failed or command not found - %s\n", exec_command->argv[0]);
+            break;
+
+        case '>' :
+        case '<' :
+            
+            redir_command = (redircmd *) command;
+            close(redir_command->fd);
+            if(open(redir_command -> filename, redir_command->mode) < 0){
+                fprintf(stderr, "File cannot be opened - %s\n", redir_command->filename);
+            }
+            run_command(redir_command->cmd);
+            break;
+        
+        case '|' :
+            pipe_command = (pipecmd*)command;
+            if(pipe(pfd) < 0){
+                fprintf(stderr, "Pipe error\n");
+                exit(-1);
+            }
+            if(fork() == 0){
+                close(1);
+                dup(pfd[1]);
+                close(pfd[0]);
+                close(pfd[1]);
+                run_command(pipe_command->left);
+            }
+            if(fork() == 0){
+                close(0);
+                dup(pfd[0]);
+                close(pfd[0]);
+                close(pfd[1]);
+                run_command(pipe_command->right);
+            }
+            close(pfd[0]);
+            close(pfd[1]);
+            wait(0);
+            wait(0);
+            break;
+
+    }
+    exit(0);
+
+}
 
 int main(){
     print_prompt();
     char *command;
+    int r, pid;
+
     do{
+        printf("aashish");
         command = readline(prompt);
-        printf("The command is \"%s\"\n", command);
+        printf("The command is %s \n", command);
         //checking for command cd
         if(check_cd(command)){
             continue;
         }
+        
+        pid = fork();
+        if(pid == -1){
+            perror("fork failed");
+        }
+        if(pid == 0){
+            run_command(parse_command(command));
+        }
+        wait(&r);
+        
         //run_command(command);
 
         free(command);
