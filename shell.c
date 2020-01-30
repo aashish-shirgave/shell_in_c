@@ -20,7 +20,9 @@ char cwd[1024];
 char symbols[] = "<>|";
 char space[] = " \t\r\n\v";
 static sigjmp_buf buf;
-pid_t pid = -1;
+pid_t pid = -1; //forgound process
+pid_t back_process[100];
+int back_process_count[100] = {0};
 
 /*************************************/
 /****** Structures *******************/
@@ -403,6 +405,8 @@ int get_command(char * command, int length){
     }
     return 0;
 }
+
+//for ctrl + c
 void signal_function(int signal_number){
     signal(SIGINT, signal_function);
     if(pid > 0){
@@ -412,12 +416,32 @@ void signal_function(int signal_number){
     siglongjmp(buf, 1);
 }
 
+//for ctrl + z 
+void signal_function_2(){
+    signal(SIGTSTP, signal_function_2);
+    if(pid > 0){
+        int temp = 0;
+        while(back_process_count[temp]){
+            temp ++;
+        }
+        fprintf(stdout, "\n[%d] \n", temp);
+        back_process[temp] = pid;
+        back_process_count[temp] = 1;
+        //kill(pid, SIGTSTP);
+        if(kill (pid, 0) == 0){
+            fprintf(stdout,"process running in background");
+        }
+    }
+    pid = -1;
+    siglongjmp(buf, 1);
+
+}
 void check_exit(char *command){
     char *temp;
     temp = string_copy(command, command + 4);
     char test[] = "exit";
     if(strcmp(temp, test) == 0){
-        printf("thank you !!\n");
+        fprintf(stdout,"thank you !!\n");
         exit(0);
     }
 }
@@ -426,6 +450,7 @@ int main(){
     char command[256];
     int r;
     signal(SIGINT, signal_function);
+    signal(SIGTSTP, signal_function_2);
     do{
         //printf("aashish\n");
         //command = readline(prompt);
